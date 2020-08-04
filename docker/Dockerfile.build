@@ -1,0 +1,222 @@
+FROM ubuntu:18.04
+
+WORKDIR /src
+MAINTAINER sk svante.karlsson@csi.se
+
+
+ENV AVRO_VER="release-1.9.2"
+ENV PROTOBUF_VER="3.7.0"
+ENV GRPC_VER="v1.26.0"
+ENV PROMETHEUS_CPP_VER="v0.9.0"
+ENV RAPIDJSON_VER="v1.1.0"
+ENV NLOHMANN_JSON_VER="3.7.1"
+ENV LIBRDKAFKA_VER="v1.4.0"
+ENV ROCKDB_VER="v6.11.4"
+ENV KSPP_VER="v0.9.1"
+
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+RUN apt-get update && apt-get install -y build-essential cmake wget pax-utils automake autogen shtool libtool unzip pkg-config sed bison flex git
+RUN apt-get update && apt-get install -y zlib1g-dev openssl libssl-dev libbz2-dev libsnappy-dev liblz4-dev libzstd-dev libgoogle-glog-dev libgflags-dev \
+  libcurl4-openssl-dev libc-ares-dev liblzma-dev libxml2-dev libfmt-dev libpcre2-dev libhttp-parser-dev libjemalloc-dev libre2-dev libpq-dev
+
+RUN wget -O boost.tar.gz "https://dl.bintray.com/boostorg/release/1.70.0/source/boost_1_70_0.tar.gz" && \
+mkdir -p boost && \
+tar \
+  --extract \
+  --file boost.tar.gz \
+  --directory boost \
+  --strip-components 1 && \
+cd boost && \
+./bootstrap.sh && \
+./b2 cxxstd=17 --with-program_options --with-iostreams --with-filesystem --with-regex --with-system --with-date_time  -j "$(getconf _NPROCESSORS_ONLN)" stage && \
+./b2 cxxstd=17 --with-program_options --with-iostreams --with-filesystem --with-regex --with-system --with-date_time install && \
+cd .. && \
+rm boost.tar.gz && \
+rm -rf boost
+
+RUN wget -O protobuf.tar.gz "https://github.com/protocolbuffers/protobuf/releases/download/v3.7.0/protobuf-cpp-3.7.0.tar.gz" && \
+mkdir -p protobuf && \
+tar \
+  --extract \
+  --file protobuf.tar.gz \
+  --directory protobuf \
+  --strip-components 1 && \
+cd protobuf && \
+./configure && \
+make -j "$(getconf _NPROCESSORS_ONLN)" && \
+make install && \
+cd .. && \
+rm protobuf.tar.gz && \
+rm -rf protobuf
+
+RUN wget -O grpc.tar.gz "https://github.com/grpc/grpc/archive/$GRPC_VER.tar.gz" && \
+mkdir -p grpc && \
+tar \
+  --extract \
+  --file grpc.tar.gz \
+  --directory grpc \
+  --strip-components 1 && \
+cd grpc && \
+make -j "$(getconf _NPROCESSORS_ONLN)" && \
+make install && \
+cd .. && \
+rm grpc.tar.gz && \
+rm -rf grpc
+
+RUN wget -O nlomann.tar.gz "https://github.com/nlohmann/json/archive/v$NLOHMANN_JSON_VER.tar.gz" && \
+mkdir -p nlomann && \
+tar \
+  --extract \
+  --file nlomann.tar.gz \
+  --directory nlomann \
+  --strip-components 1 && \
+cd nlomann && \
+mkdir build && cd build && \
+cmake .. && \
+make -j "$(getconf _NPROCESSORS_ONLN)" && \
+make install && \
+cd ../.. && \
+rm nlomann.tar.gz && \
+rm -rf nlomann
+
+RUN wget -O rapidjson.tar.gz "https://github.com/miloyip/rapidjson/archive/$RAPIDJSON_VER.tar.gz" && \
+mkdir -p rapidjson && \
+tar \
+   --extract \
+   --file rapidjson.tar.gz \
+   --directory rapidjson \
+   --strip-components 1 && \
+cd rapidjson && \
+mkdir build && \
+cd build && \
+cmake -DRAPIDJSON_BUILD_EXAMPLES=OFF -DRAPIDJSON_BUILD_DOC=OFF -DRAPIDJSON_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=ON -DCMAKE_CXX_STANDARD=17 .. && \
+make install && \
+rm -rf /usr/local/share/doc/RapidJSON && \
+cd ../.. && \
+rm rapidjson.tar.gz && \
+rm -rf rapidjson
+
+RUN wget -O rocksdb.tar.gz "https://github.com/facebook/rocksdb/archive/$ROCKDB_VER.tar.gz" && \
+mkdir -p rocksdb && \
+tar \
+    --extract \
+    --file rocksdb.tar.gz \
+    --directory rocksdb \
+    --strip-components 1 && \
+cd rocksdb && \
+export USE_RTTI=1 && \
+make -j "$(getconf _NPROCESSORS_ONLN)" shared_lib && \
+make install-shared && \
+cd .. && \
+rm rocksdb.tar.gz && \
+rm -rf rocksdb
+
+RUN wget -O prometheus-cpp.tar.gz "https://github.com/jupp0r/prometheus-cpp/archive/$PROMETHEUS_CPP_VER.tar.gz" && \
+mkdir -p prometheus-cpp && \
+tar \
+  --extract \
+  --file prometheus-cpp.tar.gz \
+  --directory prometheus-cpp \
+  --strip-components 1 && \
+cd prometheus-cpp && \
+mkdir build && cd build && \
+cmake  -DCMAKE_BUILD_TYPE=Release -DENABLE_PULL=OFF -DUSE_THIRDPARTY_LIBRARIES=OFF -DENABLE_TESTING=OFF -DBUILD_SHARED_LIBS=ON -DOVERRIDE_CXX_STANDARD_FLAGS=OFF -DCMAKE_CXX_STANDARD=17 .. && \
+make -j "$(getconf _NPROCESSORS_ONLN)" && \
+make install && \
+cd ../.. && \
+rm prometheus-cpp.tar.gz && \
+rm -rf prometheus-cpp
+
+
+RUN wget -O avro.tar.gz "https://github.com/apache/avro/archive/$AVRO_VER.tar.gz" && \
+mkdir -p avro  && \
+tar \
+  --extract \
+  --file avro.tar.gz \
+  --directory avro \
+  --strip-components 1  && \
+sed -i.bak1 's/-std=c++11/-std=c++17/g' avro/lang/c++/CMakeLists.txt && \
+sed -i.bak2 '/regex system)/a SET(Boost_LIBRARIES boost_program_options boost_iostreams boost_filesystem boost_regex boost_system z bz2)' avro/lang/c++/CMakeLists.txt  && \
+cd avro/lang/c++/  && \
+mkdir build  && \ 
+cd build  && \
+cmake -DCMAKE_BUILD_TYPE=Release .. -DBUILD_SHARED_LIBS=ON -DCMAKE_CXX_STANDARD=17 && \
+make -j "$(getconf _NPROCESSORS_ONLN)" && \
+make install  && \
+cd ../../../..  && \
+rm avro.tar.gz  && \
+rm -rf arvo
+
+RUN wget -O librdkafka.tar.gz "https://github.com/edenhill/librdkafka/archive/$LIBRDKAFKA_VER.tar.gz" && \
+mkdir -p librdkafka && \
+tar \
+  --extract \
+  --file librdkafka.tar.gz \
+  --directory librdkafka \
+  --strip-components 1 && \
+cd librdkafka && \
+./configure --prefix=/usr/local && \
+make -j "$(getconf _NPROCESSORS_ONLN)" && \
+make install && \
+cd .. && \
+rm librdkafka.tar.gz && \
+rm -rf librdkafka
+
+
+
+RUN wget -O kspp.tar.gz "https://github.com/bitbouncer/kspp/archive/$KSPP_VER.tar.gz" && \
+mkdir -p kspp && \
+tar \
+  --extract \
+  --file kspp.tar.gz \
+  --directory kspp \
+  --strip-components 1 && \
+cd kspp && \
+rm -rf build && \ 
+mkdir build && cd build && \
+cmake \
+ -DCMAKE_BUILD_TYPE=Release \
+ -DENABLE_ROCKSDB=ON \
+ -DENABLE_POSTGRES=ON \
+ -DENABLE_INFLUXDB=OFF \
+ -DENABLE_ELASTICSEARCH=OFF \
+ -DENABLE_S3=OFF \
+ -DENABLE_GRPC=ON \
+ -DBUILD_STATIC_LIBS=ON \
+ -DBUILD_SHARED_LIBS=OFF \
+ -DBUILD_TOOLS=ON \
+ -DBUILD_TESTS=OFF \
+ -DBUILD_EXAMPLES=OFF \
+ -DLINK_SHARED=OFF \
+ .. && \
+\ 
+make -j "$(getconf _NPROCESSORS_ONLN)" && \ 
+make install && \
+cd ../..
+
+
+COPY cmake cmake
+COPY programs programs
+COPY proto proto
+COPY utils utils
+COPY CMakeLists.txt  .
+
+RUN mkdir build && \
+    cd build && \
+    cmake  -DCMAKE_BUILD_TYPE=Release .. && \
+    make -j "$(getconf _NPROCESSORS_ONLN)" && \
+    make install && \
+    strip --strip-all /usr/local/lib/*.so* && \
+    strip --strip-unneeded /usr/local/bin/*
+
+RUN runDeps="$( \
+      scanelf --needed --nobanner --recursive /usr/local \
+        | awk '{ gsub(/,/, "\n", $2); print $2 }' \
+        | sort -u \
+        | xargs -r dpkg -S | cut -d : -f 1  \
+        | sort -u \
+      )" && \
+     echo "$runDeps" > runDeps
+
+
